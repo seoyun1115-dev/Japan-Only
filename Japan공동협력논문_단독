@@ -1,0 +1,250 @@
+!pip install requests pandas openpyxl
+
+import requests
+import pandas as pd
+import time
+
+# -----------------------------
+# 1. 기본 설정
+# -----------------------------
+
+LENS_API_URL = "https://api.lens.org/scholarly/search"
+API_TOKEN = "ILX1M9IfFwiyoKeZlcosSojFxqB0IHmgy7Bnuizv1i1DLPvLw5kc"
+
+HEADERS = {
+    "Authorization": f"Bearer {API_TOKEN}",
+    "Content-Type": "application/json"
+}
+
+# 테스트 국가 4개
+COUNTRIES = {
+    "JP": "Japan"
+}
+
+# 테스트 기술 2개
+TECH_QUERIES = {
+    "고성능·저전력 인공지능 반도체": '''
+        publication_type:"journal article"
+        AND year_published:[2024 TO 2025]
+        AND ((semiconductor OR accelerator OR chip OR "Integrated Circuit" OR IC OR processor OR "System-on-Chip" OR SOC)
+        AND("Artificial Intelligen*" OR AI OR "neural network" OR neuromorphic OR "deep learning" OR "machine learning"))
+    ''',
+     "고집적·저항기반 메모리": '''
+        publication_type:"journal article"
+        AND year_published:[2024 TO 2025]
+        AND ((semiconductor OR memory OR DRAM OR NAND OR PRAM OR RERAM OR MRAM OR RRAM OR CBRAM OR PCRAM OR STT-RAM OR (Conductive-Bridging RAM) OR (Phase-Change RAM) OR (Spin-Transfer Torque RAM) OR (Non-Volatile Memory) OR NVM) AND (resistance OR resistive OR High-density OR HBM OR 3D stack*))
+    ''' ,
+     "전력반도체": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((semiconductor OR accelerator OR chip OR (Integrated Circuit) OR IC) AND ((electric AND (power OR energy)) OR (power management) OR PMIC OR (silicon carbide) OR SiC OR GaN OR (Gallium Nitride) OR (aluminium nitride) OR (battery management) OR BMIC OR MOSFET))
+    ''' ,
+     "반도체 첨단패키징": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((semiconductor OR accelerator OR chip OR (Integrated Circuit) OR IC) AND (packaging OR package OR QFN OR (Quad Flat No-Lead) OR TSOP OR (Thin Small Outline Package) OR BOC OR (Board On Chip) OR FC OR (Flip Chip) OR (wafer level) OR heterogeneous OR TSV OR (Through Hole Via) OR FOWLP OR WLCSP OR BGA OR LGA OR QFN OR Flip-Module OR COB OR System-in-Package))
+    ''' ,
+     "반도체 소재·부품·장비": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((semiconductor OR accelerator OR chip OR (Integrated Circuit) OR IC) AND (material* OR part OR equipment*) AND (manufactur* OR test OR evaluation OR environment* OR ESG OR efficien* OR (reliabl* Epitaxy) OR Deposition OR Etching OR Doping OR Diffusion OR Lithography OR Cleanroom OR Substrate OR PhotOResist OR Photomask OR Steppe) NOT (part (I OR II OR III OR IV OR V OR VI OR VII OR 1 OR 2 OR 3 OR 4 OR 5 OR 6 OR 7 OR 8 OR 9)))
+    ''' ,
+     "차세대 고성능 센서": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((sensor OR sensing) AND (high-performance OR intellectual OR high-accuracy OR (extreme environment*) OR Precision OR MEMS OR NEMS OR Micro-sensors OR NanosensORs OR ((ultra OR extreme) AND (High-speed OR High-temperature OR High-pressure))))
+    ''' ,
+     "프리폼 디스플레이": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (display AND (freeform OR free-form OR flexible OR bendable OR foldable OR wrinkle OR stretchable OR multi-axis OR (Radius of Curvature) OR curved OR rollable OR Conformable OR Transparent OR Wearable))
+    ''' ,
+     "무기발광 디스플레이": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((display OR LED OR (light-emitting diode)) AND (inorganic OR QD OR (quantum dot) OR GaN OR InGaN OR ZnSe OR AlInGaP))
+    ''' ,
+     "디스플레이 소재·부품·장비": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (display AND (material* OR part OR equipment*) AND (manufacture OR (large scale) OR ESG OR (large area) OR pattern OR environment* OR efficien* OR reliabl* OR Fabrication OR process* OR Assembly OR Characterization OR Metrics) NOT (part (I OR II OR III OR IV OR V OR VI OR VII OR 1 OR 2 OR 3 OR 4 OR 5 OR 6 OR 7 OR 8 OR 9)))
+    ''' ,
+     "리튬이온전지 및 핵심소재": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (lithium AND ((ion battery) OR (secondary battery) OR (battery cell) OR (Rechargeable battery)) AND (material* OR electrode OR cathode OR anode OR electrolyte OR separator OR NCM OR olivine OR (lithium rich cathode) OR graphite OR binder OR (heat shrinkage) OR (thermal shrinkage) OR (ceramic coating) OR (electrolyte additive) OR  salt OR LiPF6 OR LiFSI OR (gell electrolyte) OR (polymer electrolyte) OR ((low OR high) AND temperature performance) OR safety OR non-flamable OR (fast charge) OR (quick charge) OR (rate capability)))
+    ''' ,
+     "차세대 이차전지 소재·셀": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((((lithium-ion battery) OR (secondary battery) OR (battery cell) OR (Rechargeable battery)) AND ((all solid) OR (solid polymer electrolyte) OR (oxide electrolyte) OR (sulfide electrolyte))) OR ((silicon battery) OR (lithium metal battery) OR (lithium sulfur battery) OR (lithium air battery) OR (sodium ion battery) OR (potassium ion battery)))
+    ''' ,
+     "이차전지 모듈·시스템": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (((lithium-ion battery) OR (secondary battery) OR (battery cell) OR (Rechargeable battery)) AND (module OR system OR (heat generation) OR cooling OR (heat capacity) OR (cell-to-cell propagation) OR (Cell to pack) OR CTP OR BMS OR (battery management system) OR (state of charge) OR SOC OR (State of health) OR SOH OR (realtime simulation) OR degradation OR (cell balancing) OR (voltage deviation) OR (voltage difference) OR (thermal management) OR (phase change materials) OR PCM OR reliability))
+    ''' ,
+     "이차전지 재사용·재활용": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((((lithium-ion battery) OR (secondary battery) OR (battery cell) OR (Rechargeable battery)) AND (reuse OR recycle OR (second life) OR (remaining useful life) OR (battery as after service) OR BAAS OR (State of health) OR SOH OR (calender life) OR (end of life) OR EOL OR (beginning of life) OR (BOL black powder) OR (pyro process) OR (hydro process) OR (direct recycling) OR ((cathode OR (rare metal) OR nickel OR cobalt OR lithium) AND ((urban mining) OR extraction)))))
+    ''' ,
+     "자율주행시스템": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((Automation OR autonomous OR Unmanned OR automated OR Self-Driving OR Driverless) AND (mobility OR car OR drive OR driving OR vehicle) AND (system OR platfORm OR lidar OR ((Light Detection) AND Ranging) OR V2X OR (vehicle to everything) OR AI OR (artificial intelligence) OR Telematics OR MaaS OR (mobility as a service) OR recognition OR decision OR control) NOT (factory))
+    ''' ,
+     "전기·수소차": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((car OR vehicle) AND (hydrogen OR (fuel cell) OR electric* OR battery OR anode OR cathode OR electrolyte OR (power line communication) OR PLC OR (fast charge) OR (rate capability) OR Zero-Emission OR ZEV OR Extended-Range OR EREV) NOT (cellphone OR (cellular phone) OR (mobile phone) OR ESS OR (Energy Storage System) OR (power generator)))
+    ''' ,
+     "도심항공교통(UAM)": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (UAM OR (Urban AND (Air OR aerial) AND (Mobility OR transport OR taxi OR vehicle OR Shuttle OR car)) OR PAV OR (Personal Air Vehicle) OR (flying car) OR vetiport OR VTOL OR (Vertical Take Off) AND Landing)
+    ''' ,
+     "소형모듈형원자로(SMR)": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (nuclear AND (SMR OR (Small Modular Reactor) OR (Small Medium Reactor) OR (micro reactor) OR (small reactor) OR (Light-water reactor) OR LWR OR (passive cooling) OR (modular integration) OR (heat pipe cooled reactor) OR ((SFR OR (gas cooled reactor) OR (molten salt reactor)) AND (small OR medium OR micro)) OR transportable OR (space nuclear reactor) OR (marine based reactor) OR (barge-mounted reactor)))
+    ''' ,
+     "선진원자력시스템·폐기물관리": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (nuclear AND ((advanced system) OR (waste management) OR canister OR repository OR (fuel reprocessing) OR (wet storage) OR (deep geological repository) OR (fuel cycle) OR Decommissioning OR (Waste disposal technology) OR (Used nuclear fuel)))
+    ''' ,
+     "합성생물학": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((synthetic OR synthesis) AND (biology OR (Synthetic genes) OR (Synthetic DNA) OR (Metabolic engineering) OR (Synthetic cells) OR (Synthetic organisms) OR (Biomolecular engineering) OR (Genetic circuits) OR Biomanufacturing OR (Systems biology) OR (Synthetic gene networks) OR (Synthetic biotechnology) OR (Synthetic gene expression) OR (Synthetic biochemistry)))
+    ''' ,
+     "감염병 백신·치료": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (((infectious disease) OR covid-19 OR sars-cov-2 OR (communicable disease)) AND (vaccine OR treatment OR therapeutics OR diagnostic OR (test* kit) OR Antiviral OR (Clinical trials) OR Therapeutic OR Antibodies OR Pathogenesis))
+    ''' ,
+     "유전자세포 치료": '''
+       publication_type: "journal article" AND year_published:[2024 TO 2025] AND (((gene therapy) OR (cell therapy)) AND ((Gene editing) OR (Gene delivery) OR (Gene targeting) OR CRISPR-Cas9 OR (Stem cell therapy) OR (T cell therapy) OR (Gene expression) OR (Gene silencing) OR (Regenerative medicine) OR (Personalized medicine) OR (RNA therapy) OR (Gene doping)))
+    ''' ,
+     "디지털 헬스데이터 분석·활용": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (health AND (care OR service OR data) AND (digital OR mobile OR eHealth OR mHealth OR Telemedicine OR (Health Information Technology) OR (Electronic Health Records) OR Telehealth OR (Wearable device) OR (Remote monitoring) OR (Health data analytics) OR (artificial intelligence) OR (big data) OR (Internet of Things) OR IoT OR smart OR intellectual))
+    ''' ,
+     "대형 다단연소사이클 엔진": '''
+        pupublication_type: "journal article" AND year_published:[2024 TO 2025] AND ((Rocket OR (space vehicle)) AND (Engine OR chamber OR pump OR valve OR combustion OR (topping cycle) OR (pre-burner cycle) OR FFSC OR (Full Flow Staged Combustion) OR (Staged combustion) OR (Fuel-rich combustion) OR (Combustion cycle) OR (Cycle performance) OR (Flow stability) OR Turbomachinery OR (Combustion dynamics) OR (Engine cooling)))
+    ''' ,
+     "첨단 항공가스터빈엔진·부품": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (((gas turbine) OR (combustion turbine) OR aerospike) AND (aero* OR air* OR flight OR nozzle OR injector) NOT (power generat*))
+    ''' ,
+     "우주관측·센싱": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((astronom* OR (outer space)) AND (observ* OR explorat* OR sensing OR sensor OR detect* OR raider OR star OR planet* OR sun OR solar OR (data acquisition) OR (data processing) OR DSN OR (deep space network) OR surveillance OR (space-borne sensor)))
+    ''' ,
+     "달착륙·표면탐사": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((moon OR lunar OR (near-earth AND (orbit OR object))) AND (landing OR surface OR explor* OR investigat* OR spacecraft OR payload OR (ground station) OR (Artemis mission) OR (sample return) OR regolith OR AOCS OR (attitude orbit control system) OR (space telemetric) OR (onboard computer) OR (flight software)) NOT (aircraft OR aeronautical OR flight OR airplane))
+    ''' ,
+     "해양자원탐사": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (((sea OR marine OR submarine) AND source AND (explor* OR investigat* OR Oceanography OR (Marine geology) OR (Seafloor mapping) OR (Submersible technology) OR (Deep-sea mining) OR (Seabed resources) OR (Hydrate deposits) OR (Methane extraction))))
+    ''' ,
+     "수전해 수소생산": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (((hydrogen production) OR (green hydrogen)) AND (electrolysis OR AEC OR pemfc OR aemfc OR (Alkaline Electrolysis Cell) OR (Proton Exchange Membrane Electrolysis Cell) OR (Anion Exchange Membrane Electrolysis Cell) OR (water splitting) OR OER OR (oxygen evolution reaction) OR HER OR (hydrogen evolution reaction) OR SOEC OR (solid oxide electrolysis cell) OR cathode OR anode OR electrolyte OR catalyst))
+    '''  ,
+     "수소저장·운송": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (((hydrogen storage) OR (hydrogen transport)) AND (chemical OR LOHC OR (Liquid Organic Hydrogen Carrier) OR ammonia OR physical OR absorb* OR hydride OR MOF OR (Metal Organic framework) OR (Liquid hydrogen) OR liquid H2 OR compress* OR cryo OR embrittlement OR (metal hydride) OR methanol OR (hydrogen storage alloy) OR (compressed hydrogen gas) OR CHG))
+    '''  ,
+     "수소연료전지 및 발전": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((hydrogen power generation) OR (Fuel cell) OR (hydrogen utilization)) AND (AFC OR PEMFC OR AEMFC OR (Alkaline fuel Cell) OR (Proton Exchange Membrane fuel Cell) OR (Anion Exchange Membrane fuel Cell) OR SOFC OR (solid oxide fuel cell) OR (oxygen reduction reaction) OR ORR OR (hydrogen oxidation reaction) OR HOR OR cathode OR anode OR electrolyte OR catalyst OR (gas diffusion layer) OR (hydrogen turbine) OR (hydrogen engine) OR (hydrogen combustion) OR (ammonia turbine) OR (ammonia combustion))
+    '''  ,
+     "데이터·AI 보안": '''
+       publication_type: "journal article" AND year_published:[2024 TO 2025] AND (security AND (AI OR (artificial intelligence) OR data OR (AI for security) OR (security for AI) OR (force negative) OR (force positive) OR (adversarial attack) OR (model confidentiality) OR SOAR OR (security orchestration automation response) OR SIEM OR (Security Information Event Management) OR datamining OR security OR (cyber threat intelligence) OR MPC OR (secure multiparty computation) OR deepfake OR (privacy preserving machine learning) OR (privacy preserving deep leaning) OR (federated learning security) OR (Data Compliance) OR (Data Risk Management) OR (Machine Learning Security) OR (Neural NetwORk Security) OR (Deep Learning Security) OR (Adversarial Machine Learning) OR (Privacy-Preserving AI) OR (AI Vulnerabilities)))
+    '''  ,
+     "디지털 취약점 분석·대응(공급망 보안)": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (security AND (digital OR Fuzzing OR APT OR (advanced persistence threat) OR CPS OR (cyber physical system) OR (symbolic execution) OR (zeropay attack) OR CVE OR (Common Vulnerabilities) AND Exposures OR (malware analysis) OR (malware forensic) OR ransomware OR exploit OR (penetration testing) OR peptest OR (anormal detection) OR (side channel attack) OR (digital vulnerabilities) OR (Vulnerability Scanning) OR (Vulnerability Assessment) OR (Vulnerability Management) OR (Ethical Hacking) OR (Exploit Development)))
+    '''  ,
+     "네트워크·클라우드 보안": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (security AND (network OR web OR cloud OR container OR (trusted execution) OR (confidential computing) OR IOT OR (edge computing) OR (abnormal detection) OR (intrusion detection) OR (encryption protocol) OR (cryptographic protocol) OR (zero trust) OR SDN OR (software defined network*) OR NFV OR (network function virtualization) OR wireless OR IAM OR (identity access management) OR authentication OR (access control) OR IDS OR IPS OR (DDoS Protection) OR (Cloud Infrastructure Security) OR ((Cloud OR netwORk) AND (Vulnerability Assessment)) OR ((Cloud OR network) AND (Security Solutions))))
+    '''  ,
+     "신산업·가상융합 보안": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (security AND ((emerging technology) OR (Extended Reality) OR (Virtual Reality) OR VR OR (Augmented Reality) OR AR OR (Mixed Reality) OR MR OR Hologram OR HR OR (post quantum cryptography) OR (block chain) OR (smart contact) OR defi OR (decentralized financing) OR (differential privacy) OR (digital twin) OR (smart grid) OR (smart healthcare) OR (digital healthcare) OR (convergence security) OR (drone security) OR (moving target deference) OR Metaverse OR NFT OR (Homomorphic encryption) OR ((Automation OR autonomous OR Unmanned OR automated) AND (mobility OR car OR drive OR driving OR vehicle)) OR drone OR UAM OR (Urban Air Mobility)))
+    '''  ,
+     "효율적 학습 및 AI 인프라(SW/HW)고도화": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (((Artificial Intelligen*) OR AI OR (big data) OR (machine learning) OR (deep learning)) AND ((efficient learning) OR (learning efficiency) OR (advanced infrastructure) OR (advanced software) OR (advanced hardware)))
+    '''  ,
+     "첨단 AI모델링·의사결정(인지·판단·추론)": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (((Artificial Intelligen*) OR AI OR (big data) OR (machine learning) OR (deep learning)) AND (cutting-edge OR (cutting edge) OR advanced OR state-of-the-art OR (state of the art)) AND ((modeling OR algorithm) OR Decision OR Cognition OR Judgment OR Reasoning OR (Reinforcement learning) OR (Predictive modeling) OR (Model selection) OR (Model optimization) OR (AI-based decision support systems) OR (Predictive analytics)))
+    '''  ,
+     "안전·신뢰 AI": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (((Artificial Intelligen*) OR AI OR (big data) OR (machine learning) OR (deep learning)) AND (safe* OR trust* OR confident* OR privacy OR bias OR reliability OR transparency OR accountability OR security OR explainability OR fairness OR trustworthiness))
+    '''  ,
+     "산업활용·혁신 AI": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (((Artificial Intelligen*) OR AI OR (big data) OR (machine learning) OR (deep learning)) AND (industr* OR manufactur* OR innovat* OR (AI in business) OR (AI applications)))
+    '''  ,
+     "5G 고도화(5G-Adv)": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((5g-adv OR (5G advanced) OR (fifth generation advanced)) AND (5G-NR OR IMT-2020 OR communication OR wireless OR network OR broadband OR cellular))
+    '''  ,
+     "6G": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((6G OR (sixth generation) OR IMT-2030) AND (communication OR wireless OR network OR broadband OR cellular))
+    '''  ,
+     "오픈랜(Open-RAN)": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((ran OR (Radio Access Network)) AND (open OR virtualiz* OR cloud OR (Inter-node communication) OR O-RAN OR (lower layer split) OR (Near-Real Time RIC) OR (function split) OR Inter-Operability OR (Cloud RAN) OR (mobile virtual network operator)))
+    '''  ,
+     "고효율 5G·6G 통신부품": '''
+       publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((5G OR (fifth generation) OR 6G OR (sixth generation) OR (optical communication)) AND (part OR equipment* OR antenna OR transceiver OR (Base station) OR Antenna) NOT (part (I OR II OR III OR IV OR V OR VI OR VII OR 1 OR 2 OR 3 OR 4 OR 5 OR 6 OR 7 OR 8 OR 9)))
+    '''  ,
+     "5G·6G 위성통신": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((5G OR (fifth generation) OR 6G OR (sixth generation) OR (optical communication)) AND (part OR equipment*) AND ((RF antenna) OR transceiver OR (Base station) OR (Radio Access Network) OR (Modulation techniques) OR (Multiple-input multiple-output) OR MIMO OR (Network slicing)) NOT (part (I OR II OR III OR IV OR V OR VI OR VII OR 1 OR 2 OR 3 OR 4 OR 5 OR 6 OR 7 OR 8 OR 9)))
+    '''  ,
+     "로봇 정밀제어·구동 부품·SW": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND ((robot* AND (((precis* OR (accura* detail*) OR exact) AND (control* OR operat*)) OR (high torque capacity) OR (high power capacity) OR (soft actuator) OR pneumatic OR hydraulic OR hybrid OR ROS OR (robot operating system) OR (middle ware))))
+    '''  ,
+     "로봇 자율이동": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (robot* AND (autonomous OR Unmanned OR self OR AI OR (artificial intelligen*)) AND (drive OR mobile OR motion OR navigat* OR (mobile manipulator) OR SLAM OR (simultaneous localization) AND mapping OR (environment recognition) OR odometry OR (Kalman filter) OR (particle filter) OR POMDP OR (Partially Observable Markov Decision Process) OR (motion planning) OR (motion optimization) OR IMU OR (inertial measurement unit) OR (Obstacle Avoidance)))
+    '''  ,
+     "고난도 자율조작": '''
+       publication_type: "journal article" AND year_published:[2024 TO 2025] AND (robot* AND (autonomous OR Unmanned OR self OR AI OR (artificial intelligen*)) AND ((high level control) OR (difficult control) OR (hard control) OR arm OR hand OR manipulator OR finger OR gripper OR humanoid OR (whole body manipulation) OR locomotion OR walking OR multi-legged OR micro OR multi OR swarm OR collaborat* OR coordinat* OR grasp))
+    '''  ,
+     "인간·로봇 상호작용": '''
+       publication_type: "journal article" AND year_published:[2024 TO 2025] AND (robot* AND human AND (interface OR interaction OR communication OR exo-skeleton OR wearable OR haptic OR glove OR glass OR prosthetic OR prosthesis OR physical OR natural OR verbal OR sound OR gesture OR augmented OR tele-operation OR cooperation))
+    '''  ,
+     "가상제조": '''
+       publication_type: "journal article" AND year_published:[2024 TO 2025] AND (manufacturing AND ((virtual manufacturing) OR VMS OR (digital manufacturing) OR (Digital Mock-up) OR CAPP OR (Computer Aided Process Planning) OR Virtual OR (Industry 4.0) OR (Smart factories) OR (Digital twin) OR (Cyber-physical systems) OR (Product lifecycle management) OR (Factory automation)))
+    '''  ,
+     "양자컴퓨팅": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (Quantum AND (computing OR qubit OR algorithm))
+    '''  ,
+     "양자통신": '''
+       publication_type: "journal article" AND year_published:[2024 TO 2025] AND (Quantum AND (communication OR QKD OR (Quantum Key distribution) OR (Quantum Random Number Generator) OR QRNG OR segmentation OR (Post Quantum Cryptography) OR PQC OR (Quantum transceiver)))
+    '''  ,
+     "양자센싱": '''
+        publication_type: "journal article" AND year_published:[2024 TO 2025] AND (Quantum AND (sensing OR sensor OR interferometry OR (Quantum magnetometry) OR (Quantum gyroscope) OR (Quantum accelerometer) OR (Quantum gravimeter)))
+    '''
+}
+
+# -----------------------------
+# 2. count 함수
+# -----------------------------
+
+def get_count(query_string):
+
+    payload = {
+        "query": {
+            "query_string": {
+                "query": query_string
+            }
+        },
+        "size": 0
+    }
+
+    response = requests.post(LENS_API_URL, headers=HEADERS, json=payload)
+
+    if response.status_code != 200:
+        print("ERROR:", response.status_code)
+        return 0
+
+    return response.json().get("total", 0)
+
+# -----------------------------
+# 3. 실행 루프
+# -----------------------------
+
+results = []
+
+for tech_name, tech_query in TECH_QUERIES.items():
+
+    print(f"\n▶ Technology: {tech_name}")
+
+    for code, country in COUNTRIES.items():
+
+        print(f"   - {country} 계산 중...")
+
+        query = f"""
+        {tech_query}
+        AND author.affiliation.address.country_code:{code}
+        """
+
+        count = get_count(query)
+        time.sleep(6)   # 10회/분 제한 보호
+
+        results.append({
+            "Technology": tech_name,
+            "Country": country,
+            "Paper_Count": count
+        })
+
+        print(f"     → {count}")
+
+# -----------------------------
+# 4. 엑셀 저장 (매트릭스 형태)
+# -----------------------------
+
+df = pd.DataFrame(results)
+
+# 🔥 피벗
+pivot_df = df.pivot(index="Country", columns="Technology", values="Paper_Count")
+
+pivot_df.to_excel("일본단독(협력)논문수_매트릭스.xlsx")
+
+print("엑셀로 저장 완료")
